@@ -71,7 +71,7 @@ export interface QuotationRequest {
     totalAmount: number;
     requestType: 'ใบเสนอราคา' | 'ใบเสร็จ';
     note?: string;
-    status: 'รออนุมัติ' | 'รอหลังบ้านตรวจสอบ' | 'รับเรื่องแล้ว' | 'เปิดบิลแล้ว' | 'ถูกปฏิเสธ';
+    status: 'รออนุมัติ' | 'รอหลังบ้านตรวจสอบ' | 'รับเรื่องแล้ว' | 'ออกใบเสนอราคา' | 'เปิดบิลแล้ว' | 'ไม่อนุมัติ' | 'ถูกปฏิเสธ';
     createdAt: string;
     updatedAt: string;
     // Joined data (not in sheet)

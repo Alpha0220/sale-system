@@ -26,8 +26,8 @@ export async function POST(req: Request) {
             newStatus = "รอหลังบ้านตรวจสอบ";
             slackMessage = "✅ *อนุมัติเรียบร้อยแล้ว* และบันทึกข้อมูลเข้าสู่ระบบหลังบ้านแล้ว";
         } else if (actionId === "reject_request") {
-            newStatus = "ถูกปฏิเสธ";
-            slackMessage = "❌ *คำขอนี้ถูกปฏิเสธแล้ว*";
+            newStatus = "ไม่อนุมัติ";
+            slackMessage = "❌ *คำขอนี้ไม่อนุมัติ*";
         }
 
         if (newStatus) {
