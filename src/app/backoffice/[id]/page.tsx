@@ -19,7 +19,12 @@ import {
     Hash,
     MapPin,
     CreditCard,
-    ShieldCheck
+    ShieldCheck,
+    FileUp,
+    Upload,
+    Trash2,
+    Download,
+    Truck
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { format } from "date-fns";
@@ -50,7 +55,9 @@ export default function RequestDetailsPage() {
     const [invoiceForm, setInvoiceForm] = useState({
         invoiceNo: "",
         invoiceDate: new Date().toISOString().split('T')[0],
+        deliveryDate: "",
     });
+    const [isUploading, setIsUploading] = useState(false);
 
     useEffect(() => {
         if (id) fetchRequest();
@@ -68,6 +75,7 @@ export default function RequestDetailsPage() {
                     setInvoiceForm({
                         invoiceNo: found.invoiceNo,
                         invoiceDate: found.invoiceDate || new Date().toISOString().split('T')[0],
+                        deliveryDate: found.deliveryDate || "",
                     });
                 }
             }
@@ -81,15 +89,8 @@ export default function RequestDetailsPage() {
     const handleAcknowledge = async () => {
         setIsSubmitting(true);
         try {
-            const res = await fetch(`/api/slack/interact`, {
-                method: "POST",
-                body: JSON.stringify({
-                    payload: JSON.stringify({
-                        callback_id: `approve_request_${id}`,
-                        actions: [{ value: "acknowledge" }],
-                        user: { name: "Backoffice User" }
-                    })
-                })
+            const res = await fetch(`/api/requests/${id}/ack`, {
+                method: "POST"
             });
             if (res.ok) fetchRequest();
         } catch (err) {
@@ -99,18 +100,96 @@ export default function RequestDetailsPage() {
         }
     };
 
+    const handleQuotation = async () => {
+        setIsSubmitting(true);
+        try {
+            const res = await fetch(`/api/requests/${id}/quotation`, {
+                method: "POST"
+            });
+            if (res.ok) fetchRequest();
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleReject = async () => {
+        if (!confirm("คุณแน่ใจหรือไม่ว่าต้องการปฏิเสธคำขอนี้?")) return;
+        setIsSubmitting(true);
+        try {
+            const res = await fetch(`/api/requests/${id}/reject`, {
+                method: "POST"
+            });
+            if (res.ok) fetchRequest();
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleStatusChange = async (newStatus: string) => {
+        if (newStatus === "เปิดบิล") {
+            // Need to use the invoice form instead
+            return;
+        }
+
+        setIsSubmitting(true);
+        try {
+            const res = await fetch(`/api/requests/${id}/status`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ status: newStatus })
+            });
+            if (res.ok) fetchRequest();
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        if (file.size > 10 * 1024 * 1024) {
+            return alert("ขนาดไฟล์ต้องไม่เกิน 10MB");
+        }
+
+        setIsUploading(true);
+        try {
+            const formData = new FormData();
+            formData.append("file", file);
+
+            const res = await fetch(`/api/requests/${id}/upload`, {
+                method: "POST",
+                body: formData,
+            });
+
+            if (res.ok) {
+                fetchRequest();
+            } else {
+                alert("เกิดข้อผิดพลาดในการอัปโหลด");
+            }
+        } catch (err) {
+            console.error(err);
+            alert("เกิดข้อผิดพลาดในการอัปโหลด");
+        } finally {
+            setIsUploading(false);
+        }
+    };
+
     const handleFinish = async () => {
         if (!invoiceForm.invoiceNo) return alert("กรุณากรอกเลขที่ Invoice");
 
         setIsSubmitting(true);
         try {
-            const res = await fetch(`/api/invoices`, {
+            const res = await fetch(`/api/requests/${id}/invoice`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    quotationRequestId: id,
-                    ...invoiceForm
-                })
+                body: JSON.stringify(invoiceForm)
             });
             if (res.ok) fetchRequest();
         } catch (err) {
@@ -170,7 +249,9 @@ export default function RequestDetailsPage() {
                                 </div>
                                 <span className={`px-4 py-1.5 rounded-full text-sm font-semibold border ${request.status === "รอหลังบ้านตรวจสอบ" ? "bg-amber-100 text-amber-700 border-amber-200" :
                                     request.status === "รับเรื่องแล้ว" ? "bg-blue-100 text-blue-700 border-blue-200" :
-                                        "bg-green-100 text-green-700 border-green-200"
+                                        request.status === "เปิดใบเสนอราคา" ? "bg-indigo-100 text-indigo-700 border-indigo-200" :
+                                            request.status === "เปิดบิล" ? "bg-green-100 text-green-700 border-green-200" :
+                                                "bg-red-100 text-red-700 border-red-200"
                                     }`}>
                                     {request.status}
                                 </span>
@@ -259,7 +340,7 @@ export default function RequestDetailsPage() {
                         </motion.div>
 
                         {/* Invoiced Details Display */}
-                        {request.status === "เปิดบิลแล้ว" && (
+                        {request.status === "เปิดบิล" && (
                             <motion.div
                                 initial={{ opacity: 0, scale: 0.95 }}
                                 animate={{ opacity: 1, scale: 1 }}
@@ -280,6 +361,14 @@ export default function RequestDetailsPage() {
                                             {request.invoiceDate ? format(new Date(request.invoiceDate), 'dd MMM yyyy', { locale: th }) : "-"}
                                         </p>
                                     </div>
+                                    <div className="col-span-2 pt-2 border-t border-green-100 dark:border-green-900/30 flex items-center gap-2">
+                                        <Truck size={18} className="text-green-500" />
+                                        <p className="text-sm text-slate-600 dark:text-slate-400">
+                                            วันที่ส่งสินค้า: <span className="font-bold text-slate-900 dark:text-white">
+                                                {request.deliveryDate ? format(new Date(request.deliveryDate), 'dd MMM yyyy', { locale: th }) : "ไม่ได้ระบุ"}
+                                            </span>
+                                        </p>
+                                    </div>
                                 </div>
                             </motion.div>
                         )}
@@ -296,52 +385,169 @@ export default function RequestDetailsPage() {
 
                             <div className="space-y-4">
                                 {request.status === "รอหลังบ้านตรวจสอบ" && (
-                                    <button
-                                        onClick={handleAcknowledge}
-                                        disabled={isSubmitting}
-                                        className="btn-primary w-full py-3 flex items-center justify-center gap-2"
-                                    >
-                                        {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : <Clock size={20} />}
-                                        รับเรื่องแล้ว
-                                    </button>
-                                )}
-
-                                {request.status === "รับเรื่องแล้ว" && (
-                                    <div className="space-y-4">
-                                        <div className="space-y-1">
-                                            <label className="text-xs font-bold text-slate-400 uppercase">เลขที่ Invoice</label>
-                                            <input
-                                                type="text"
-                                                className="input-field"
-                                                placeholder="INV-XXXXX"
-                                                value={invoiceForm.invoiceNo}
-                                                onChange={(e) => setInvoiceForm({ ...invoiceForm, invoiceNo: e.target.value })}
-                                            />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-xs font-bold text-slate-400 uppercase">วันที่ออก Invoice</label>
-                                            <input
-                                                type="date"
-                                                className="input-field"
-                                                value={invoiceForm.invoiceDate}
-                                                onChange={(e) => setInvoiceForm({ ...invoiceForm, invoiceDate: e.target.value })}
-                                            />
-                                        </div>
+                                    <div className="space-y-3">
                                         <button
-                                            onClick={handleFinish}
+                                            onClick={handleAcknowledge}
                                             disabled={isSubmitting}
                                             className="btn-primary w-full py-3 flex items-center justify-center gap-2"
                                         >
-                                            {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
-                                            ยืนยันออกบิลเรียบร้อย
+                                            {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : <Clock size={20} />}
+                                            รับเรื่องดำเนินการ
+                                        </button>
+                                        <button
+                                            onClick={handleReject}
+                                            disabled={isSubmitting}
+                                            className="w-full py-2 text-red-600 font-medium hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100"
+                                        >
+                                            ปฏิเสธคำขอ
                                         </button>
                                     </div>
                                 )}
 
-                                {request.status === "เปิดบิลแล้ว" && (
-                                    <div className="text-center py-4 text-green-600 bg-green-50 dark:bg-green-900/10 rounded-xl border border-green-100 dark:border-green-900/30">
-                                        <CheckCircle size={32} className="mx-auto mb-2" />
-                                        <p className="font-bold">เสร็จสิ้นกระบวนการ</p>
+                                {request.status !== "รอหลังบ้านตรวจสอบ" && request.status !== "เปิดบิล" && request.status !== "ไม่อนุมัติ" && request.status !== "ถูกปฏิเสธ" && (
+                                    <div className="space-y-6">
+                                        {/* Status Picker for flexibility */}
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-slate-400 uppercase">เปลี่ยนสถานะปัจจุบัน</label>
+                                            <div className="flex flex-col gap-2">
+                                                <button
+                                                    onClick={() => handleQuotation()}
+                                                    disabled={isSubmitting || request.status === "เปิดใบเสนอราคา"}
+                                                    className={`w-full py-2.5 rounded-xl font-bold transition-all flex items-center justify-center gap-2 border ${request.status === "เปิดใบเสนอราคา"
+                                                        ? "bg-indigo-50 text-indigo-600 border-indigo-200"
+                                                        : "bg-white text-slate-700 border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/50"
+                                                        }`}
+                                                >
+                                                    <FileText size={18} />
+                                                    เปิดใบเสนอราคาเรียบร้อย
+                                                </button>
+
+                                                <select
+                                                    className="input-field text-sm"
+                                                    value={request.status}
+                                                    onChange={(e) => handleStatusChange(e.target.value)}
+                                                    disabled={isSubmitting}
+                                                >
+                                                    <option value="รับเรื่องแล้ว">สถานะ: รับเรื่องแล้ว</option>
+                                                    <option value="เปิดใบเสนอราคา">สถานะ: เปิดใบเสนอราคา</option>
+                                                    <option value="เปิดบิล">สถานะ: เปิดบิล (กรอกข้อมูลด้านล่าง)</option>
+                                                    <option value="รอหลังบ้านตรวจสอบ">สถานะ: ย้อนกลับไปรอตรวจสอบ</option>
+                                                    <option value="ไม่อนุมัติ">สถานะ: ไม่อนุมัติ</option>
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        {/* Final Billing Step */}
+                                        <div className="pt-6 border-t border-slate-100 dark:border-slate-800">
+                                            <div className="flex items-center gap-2 mb-4">
+                                                <div className="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 text-green-600 flex items-center justify-center font-bold text-sm">3</div>
+                                                <p className="text-sm font-bold text-slate-900 dark:text-white">ขั้นตอนส่งบิล (Invoice)</p>
+                                            </div>
+
+                                            <div className="space-y-4 bg-slate-50/50 dark:bg-slate-900/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+                                                <div className="space-y-1">
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase">เลขที่ Invoice</label>
+                                                    <input
+                                                        type="text"
+                                                        className="input-field bg-white"
+                                                        placeholder="INV-XXXXX"
+                                                        value={invoiceForm.invoiceNo}
+                                                        onChange={(e) => setInvoiceForm({ ...invoiceForm, invoiceNo: e.target.value })}
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase">วันที่ออก Invoice</label>
+                                                    <input
+                                                        type="date"
+                                                        className="input-field bg-white"
+                                                        value={invoiceForm.invoiceDate}
+                                                        onChange={(e) => setInvoiceForm({ ...invoiceForm, invoiceDate: e.target.value })}
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
+                                                        <Truck size={12} /> วันที่ส่งสินค้า
+                                                    </label>
+                                                    <input
+                                                        type="date"
+                                                        className="input-field bg-white"
+                                                        value={invoiceForm.deliveryDate}
+                                                        onChange={(e) => setInvoiceForm({ ...invoiceForm, deliveryDate: e.target.value })}
+                                                    />
+                                                </div>
+                                                <button
+                                                    onClick={handleFinish}
+                                                    disabled={isSubmitting}
+                                                    className="btn-primary w-full py-3 flex items-center justify-center gap-2 shadow-lg shadow-primary-500/25"
+                                                >
+                                                    {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />}
+                                                    ปิดงาน & ส่งบิลเรียบร้อย
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {/* File Upload Section */}
+                                        <div className="pt-6 border-t border-slate-100 dark:border-slate-800">
+                                            <p className="text-sm font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                                                <FileUp size={18} className="text-slate-400" />
+                                                ไฟล์ใบเสนอราคา (PDF)
+                                            </p>
+
+                                            {request.quotationFile ? (
+                                                <div className="p-4 bg-indigo-50 dark:bg-indigo-900/10 rounded-xl border border-indigo-100 dark:border-indigo-900/30">
+                                                    <div className="flex items-center justify-between gap-3">
+                                                        <div className="flex items-center gap-2 overflow-hidden">
+                                                            <div className="w-8 h-8 flex-shrink-0 bg-white dark:bg-slate-800 rounded-lg flex items-center justify-center text-indigo-600 shadow-sm">
+                                                                <FileText size={18} />
+                                                            </div>
+                                                            <div className="overflow-hidden">
+                                                                <p className="text-xs font-bold text-indigo-900 dark:text-indigo-300 truncate">
+                                                                    {request.quotationFile.split('/').pop()}
+                                                                </p>
+                                                                <a
+                                                                    href={request.quotationFile}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="text-[10px] text-indigo-500 hover:underline"
+                                                                >
+                                                                    คลิกเพื่อดูไฟล์
+                                                                </a>
+                                                            </div>
+                                                        </div>
+                                                        <label className="flex-shrink-0 cursor-pointer p-2 hover:bg-white dark:hover:bg-slate-800 rounded-lg transition-colors text-slate-400 hover:text-indigo-600">
+                                                            <Upload size={16} />
+                                                            <input type="file" className="hidden" accept=".pdf" onChange={handleFileUpload} disabled={isUploading} />
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <label className="border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl p-6 flex flex-col items-center justify-center gap-2 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-all group">
+                                                    <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center text-slate-400 group-hover:bg-primary-50 group-hover:text-primary-500 transition-colors">
+                                                        {isUploading ? <Loader2 className="animate-spin" size={24} /> : <Upload size={24} />}
+                                                    </div>
+                                                    <div className="text-center">
+                                                        <p className="text-sm font-bold text-slate-600 dark:text-slate-400">คลิกเพื่ออัปโหลดไฟล์</p>
+                                                        <p className="text-xs text-slate-400">PDF เท่านั้น (สูงสุด 10MB)</p>
+                                                    </div>
+                                                    <input type="file" className="hidden" accept=".pdf" onChange={handleFileUpload} disabled={isUploading} />
+                                                </label>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {request.status === "เปิดบิล" && (
+                                    <div className="text-center py-6 text-green-600 bg-green-50 dark:bg-green-900/10 rounded-2xl border border-green-100 dark:border-green-900/30">
+                                        <CheckCircle size={40} className="mx-auto mb-2" />
+                                        <p className="font-bold text-lg">ดำเนินการเสร็จสมบูรณ์</p>
+                                        <p className="text-xs text-green-600/70">เอกสารชุดนี้ได้รับการบันทึกเข้าระบบเรียบร้อย</p>
+                                    </div>
+                                )}
+
+                                {(request.status === "ไม่อนุมัติ" || request.status === "ถูกปฏิเสธ") && (
+                                    <div className="text-center py-6 text-red-600 bg-red-50 dark:bg-red-900/10 rounded-2xl border border-red-100 dark:border-red-900/30">
+                                        <AlertCircle size={40} className="mx-auto mb-2" />
+                                        <p className="font-bold text-lg">คำขอนี้ถูกปฏิเสธ</p>
                                     </div>
                                 )}
                             </div>
