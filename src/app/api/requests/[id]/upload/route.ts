@@ -18,7 +18,7 @@ export async function POST(
         }
 
         const bytes = await file.arrayBuffer();
-        const buffer = Buffer.from(bytes);
+        const buffer = new Uint8Array(bytes);
 
         // Create a unique filename
         const filename = `${id}_${Date.now()}_${file.name.replace(/\s+/g, "_")}`;
